@@ -10,8 +10,23 @@
 #include <sys/types.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include "utils.h"
 
-#include "../utils.h"
+static inline void print_self_maps()
+{
+    // It seems /proc/self/maps can only be read character-by-character
+    printf("/proc/self/maps:\n");
+    int fd;
+    VS(fd = open("/proc/self/maps", O_RDONLY));
+    while (true) {
+        unsigned char c;
+        if (do_read_partial(fd, &c, 1) == 0)
+            break;
+        VE(putchar(c) != EOF);
+    }
+    VS(close(fd));
+    printf("\n\n");
+}
 
 int main(int argc, char *argv[])
 {
@@ -21,20 +36,22 @@ int main(int argc, char *argv[])
     uint8_t* new_code = (uint8_t*) NEW_CODE_ADDRESS;
 
 
+#define P(x) do { extern uint8_t x; printf(#x "\t= %p\n", &x); } while (0)
+    P(__executable_start);
+    P(_etext);
+    P(_edata);
+    P(_end);
+    print_self_maps();
+
+
     printf("First four bites of new code (%p):\n", new_code);
     do_write(1, new_code, 4);
 
 
     printf("\nChecking it matches './test_new_code'...\n");
 
-    int fd; struct stat st;
-    VS(fd = open("./test_new_code", O_RDONLY));
-    VS(fstat(fd, &st));
-    off_t new_code_size = st.st_size;
-    uint8_t *from_file = malloc(new_code_size);
-    do_read(fd, from_file, new_code_size);
-    VS(close(fd));
-
+    off_t new_code_size;
+    uint8_t *from_file = read_file("./test_new_code", &new_code_size);
 
     /*
     printf("i: actual from_file\n");

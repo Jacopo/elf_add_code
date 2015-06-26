@@ -6,6 +6,9 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 #include <unistd.h>
 
 #define likely(x) __builtin_expect(!!(x), 1)
@@ -78,4 +81,23 @@ __attribute__((__nonnull__))
 static inline void do_write(int fd, const uint8_t *buf, size_t len)
 {
     V(do_write_partial(fd, buf, len) == (ssize_t) len);
+}
+
+
+
+__attribute__((__nonnull__))
+static inline uint8_t* read_file(const char *filename, off_t *size)
+{
+    int fd;
+    VS(fd = open(filename, O_RDONLY));
+
+    struct stat st;
+    VS(fstat(fd, &st));
+    *size = st.st_size;
+
+    uint8_t *buf = (uint8_t*) malloc(*size);
+    VE(buf != NULL);
+    do_read(fd, buf, *size);
+    VS(close(fd));
+    return buf;
 }

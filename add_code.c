@@ -8,9 +8,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
 #include <sys/types.h>
-#include <fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include "utils.h"
 
@@ -60,22 +59,9 @@ int main(int argc, char *argv[])
     if (argc != 3)
         errx(10, "Usage: %s program new_code > out_program", argv[0]);
 
-    int fd; struct stat st;
-    VS(fd = open(argv[1], O_RDONLY));
-    VS(fstat(fd, &st));
-    off_t original_size = st.st_size;
-    uint8_t *elf = malloc(original_size);
-    V(elf != NULL);
-    do_read(fd, elf, original_size);
-    VS(close(fd));
-
-    VS(fd = open(argv[2], O_RDONLY));
-    VS(fstat(fd, &st));
-    off_t new_code_size = st.st_size;
-    uint8_t *new_code = malloc(new_code_size);
-    do_read(fd, new_code, new_code_size);
-    VS(close(fd));
-
+    off_t original_size, new_code_size;
+    uint8_t *elf = read_file(argv[1], &original_size);
+    uint8_t *new_code = read_file(argv[2], &new_code_size);
 
     /* General checks */
     Ehdr *file_header = (Ehdr *) elf;
@@ -116,8 +102,8 @@ int main(int argc, char *argv[])
 
     do_write(1, elf, original_size);
     if (pad_len) {
-        uint8_t *pad = calloc(1, pad_len);
-        V(pad != NULL);
+        uint8_t *pad = (uint8_t*) calloc(1, pad_len);
+        VE(pad != NULL);
         do_write(1, pad, pad_len);
     }
     do_write(1, new_code, new_code_size);
