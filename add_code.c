@@ -111,9 +111,8 @@ int main(int argc, char *argv[])
 
     /* Pads to make sure that the code is loaded right at NEW_CODE_ADDRESS */
     V(sysconf(_SC_PAGESIZE) == 4096u);
-    unsigned int pad_len = 4096u - (original_size % 4096u);
+    unsigned int pad_len = 4096u - (original_size % 4096u) + (NEW_CODE_ADDRESS % 4096u);
     phdr->p_offset = original_size + pad_len;
-
 
     do_write(1, elf, original_size);
     if (pad_len) {

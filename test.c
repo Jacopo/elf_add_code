@@ -35,6 +35,19 @@ int main(int argc, char *argv[])
     do_read(fd, from_file, new_code_size);
     VS(close(fd));
 
+
+    /*
+    printf("i: actual from_file\n");
+    printf("-------------------\n");
+    for (int64_t i = 0; i < new_code_size; i++) {
+        uint8_t b = new_code[i];
+        printf("%1$"PRIi64": %2$02"PRIx8" %3$02"PRIx8"   %2$c %3$c", i, b, from_file[i]);
+        if (b != from_file[i])
+            printf("    differs");
+        printf("\n");
+    }
+    */
+
     V(memcmp(new_code, from_file, new_code_size) == 0);
 
 
