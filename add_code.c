@@ -68,22 +68,22 @@ int main(int argc, char *argv[])
     check_elf_file_header(file_header);
 
     V(file_header->e_phoff == sizeof(Ehdr)); /* No surprises in the middle */
-
-    /* Examines the first program header */
-    /* Specifies the program headers themeselves */
     Phdr *phdr = (Phdr*) (elf + file_header->e_phoff);
-    V(phdr->p_type == PT_PHDR);
-    V((phdr->p_flags & PF_W) == 0);
-    V(phdr->p_offset >= sizeof(Ehdr));
-    V(phdr->p_filesz == (sizeof(Phdr) * file_header->e_phnum));
-    V(phdr->p_filesz == phdr->p_memsz);
 
     /* Let's find the (first) NOTE */
-    for (int i = 1; i < file_header->e_phnum; i++) {
+    for (int i = 0; i < file_header->e_phnum; i++) {
         phdr++;
-        V(phdr->p_type != PT_PHDR);
         if (phdr->p_type == PT_NOTE)
             break;
+        if (phdr->p_type == PT_PHDR) {
+            /* This guy specifies the program headers themselves */
+            /* I'm not sure why it exists, but let's do some consistency checks */
+            V(i == 0);
+            V((phdr->p_flags & PF_W) == 0);
+            V(phdr->p_offset >= sizeof(Ehdr));
+            V(phdr->p_filesz == (sizeof(Phdr) * file_header->e_phnum));
+            V(phdr->p_filesz == phdr->p_memsz);
+        }
     }
     if (phdr->p_type != PT_NOTE)
         errx(1, "There was no NOTE program header!");
