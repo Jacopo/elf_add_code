@@ -71,8 +71,7 @@ int main(int argc, char *argv[])
     Phdr *phdr = (Phdr*) (elf + file_header->e_phoff);
 
     /* Let's find the (first) NOTE */
-    for (int i = 0; i < file_header->e_phnum; i++) {
-        phdr++;
+    for (int i = 0; i < file_header->e_phnum; i++, phdr++) {
         if (phdr->p_type == PT_NOTE)
             break;
         if (phdr->p_type == PT_PHDR) {
