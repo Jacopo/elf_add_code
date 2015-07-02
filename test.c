@@ -1,11 +1,12 @@
-#define NEW_CODE_ADDRESS 0x6660000u /* Must match the one in add_code.c */
-
+#include <assert.h>
 #include <err.h>
+#include <errno.h>
 #include <inttypes.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <fcntl.h>
@@ -30,10 +31,14 @@ static inline void print_self_maps()
 
 int main(int argc, char *argv[])
 {
-    if (argc != 1)
-        errx(10, "Usage: %s", argv[0]);
+    if (argc != 1 && argc != 2)
+        errx(10, "Usage: %s [new_code_vaddr=0x06660000]", argv[0]);
 
-    uint8_t* new_code = (uint8_t*) NEW_CODE_ADDRESS;
+    unsigned long new_code_ul = 0x06660000u;
+    static_assert(sizeof(unsigned long) == sizeof(void*), ""); /* Unclean, but good and simple */
+    if (argc == 2)
+        new_code_ul = explicit_hex_conv(argv[1]);
+    uint8_t* new_code = (uint8_t*) new_code_ul;
 
 
 #define P(x) do { extern uint8_t x; printf(#x "\t= %p\n", &x); } while (0)
@@ -50,7 +55,7 @@ int main(int argc, char *argv[])
 
     printf("\nChecking it matches './test_new_code'...\n");
 
-    off_t new_code_size;
+    size_t new_code_size;
     uint8_t *from_file = read_file("./test_new_code", &new_code_size);
 
     /*

@@ -1,7 +1,6 @@
 /* Finds the first NOTE program header and turns it into another LOAD header for code. Check what you are discarding with readelf --notes. */
 
-#define NEW_CODE_ADDRESS 0x6660000u /* Code will be loaded at this address */
-
+#include <assert.h>
 #include <err.h>
 #include <inttypes.h>
 #include <stdbool.h>
@@ -26,6 +25,7 @@ static const int ELFCLASS = ELFCLASS32;
 # define Phdr Elf64_Phdr
 # define Shdr Elf64_Shdr
 static const int ELFCLASS = ELFCLASS64;
+static_assert(sizeof(void*) == 8, "I mangle 64-bit ELFs only as a 64-bit program. This thing is already complicated enough.");
 #else
 #error "Do you want to mangle 32-bit or 64-bit ELF files?"
 #endif
@@ -56,10 +56,15 @@ static void check_elf_file_header(const Ehdr *file_header)
 
 int main(int argc, char *argv[])
 {
-    if (argc != 3)
-        errx(10, "Usage: %s program new_code > out_program", argv[0]);
+    if (argc != 3 && argc != 4)
+        errx(10, "Usage: %s program new_code [new_code_vaddr=0x06660000] > out_program", argv[0]);
 
-    off_t original_size, new_code_size;
+    unsigned long new_code_vaddr = 0x06660000u;
+    static_assert(sizeof(unsigned long) == sizeof(void*), ""); /* Unclean, but good and simple */
+    if (argc == 4)
+        new_code_vaddr = explicit_hex_conv(argv[3]);
+
+    size_t original_size, new_code_size;
     uint8_t *elf = read_file(argv[1], &original_size);
     uint8_t *new_code = read_file(argv[2], &new_code_size);
 
@@ -90,13 +95,13 @@ int main(int argc, char *argv[])
 
     phdr->p_type = PT_LOAD;
     phdr->p_flags = (PF_R | PF_X);
-    phdr->p_vaddr = phdr->p_paddr = NEW_CODE_ADDRESS;
+    phdr->p_vaddr = phdr->p_paddr = new_code_vaddr;
     phdr->p_filesz = phdr->p_memsz = new_code_size;
     phdr->p_align = 1; /* Not sure if it matters or not */
 
-    /* Pads to make sure that the code is loaded right at NEW_CODE_ADDRESS */
+    /* Pads to make sure that the code is loaded right at new_code_vaddr */
     V(sysconf(_SC_PAGESIZE) == 4096u);
-    unsigned int pad_len = 4096u - (original_size % 4096u) + (NEW_CODE_ADDRESS % 4096u);
+    unsigned long pad_len = 4096u - (original_size % 4096u) + (new_code_vaddr % 4096u);
     phdr->p_offset = original_size + pad_len;
 
     do_write(1, elf, original_size);

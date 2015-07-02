@@ -6,6 +6,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -86,18 +87,43 @@ static inline void do_write(int fd, const uint8_t *buf, size_t len)
 
 
 __attribute__((__nonnull__))
-static inline uint8_t* read_file(const char *filename, off_t *size)
+static inline uint8_t* read_file(const char *filename, size_t *size)
 {
     int fd;
     VS(fd = open(filename, O_RDONLY));
 
     struct stat st;
     VS(fstat(fd, &st));
-    *size = st.st_size;
+    V(st.st_size <= SSIZE_MAX);
+    *size = (size_t) st.st_size;
 
     uint8_t *buf = (uint8_t*) malloc(*size);
     VE(buf != NULL);
     do_read(fd, buf, *size);
     VS(close(fd));
     return buf;
+}
+
+
+__attribute__((__nonnull__))
+static inline unsigned long explicit_hex_conv(const char *p) 
+{
+    /* We just want a 0xAbC123 string, nothing more, nothing less. */
+    /* Man, checking this correctly _is_ annoying. */
+
+    /* We don't want confusion on the base. */
+    if (strncmp("0x", p, 2) != 0)
+        errx(1, "Wrong parameter (%s). Must start with '0x'", p);
+    if (p[2] == '\0')
+        errx(1, "Wrong parameter (%s). Just passed '0x'!", p);
+    p += 2;
+
+    char *endptr;
+    errno = 0;
+    int ret = strtoul(p, &endptr, 16);
+    if (errno != 0)
+        err(1, "Wrong parameter (%s). Must be 0xAb...", p);
+    if (*endptr != '\0')
+        errx(1, "Wrong parameter (%s). Must be 0xAb... (invalid characters start at: %s)", p, endptr);
+    return ret;
 }

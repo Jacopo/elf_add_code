@@ -1,4 +1,6 @@
 /add_code_32
 /add_code_64
 /test
-/modified_test
+/test_static
+/test_32
+/test_static_32
