@@ -4,7 +4,7 @@ BITS 64
 ; 64-bit mode, and the same behavior (well, uses the entire rcx, obviously)
 
 mov eax, 'AAAA'
-xor eax, eax
+xor ecx, ecx
 
 call n
 n: pop rcx

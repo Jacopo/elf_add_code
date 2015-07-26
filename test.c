@@ -76,5 +76,8 @@ int main(int argc, char *argv[])
     printf("Jumping there...\n");
 
     typedef int (*pfunc)();
-    return ((pfunc) new_code)();
+    unsigned int ret = ((pfunc) new_code)();
+    printf("new code returned 0x%x\n", ret);
+    V(ret == 0x41414141u);
+    return 0;
 }
