@@ -4,3 +4,6 @@
 /test_static
 /test_32
 /test_static_32
+/test_new_code
+/test_multisection_32
+/test_multisection_64

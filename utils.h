@@ -20,6 +20,8 @@
 #define VE(x) if (unlikely(!(x))) err(-9, __FILE__ ":" VAL_TO_STR(__LINE__) " %s, it's not %s", __PRETTY_FUNCTION__, #x)
 #define VS(x) if (unlikely((x) == -1)) err(-9, __FILE__ ":" VAL_TO_STR(__LINE__) " %s, %s failed (returned -1)", __PRETTY_FUNCTION__, #x)
 
+#define max(a,b) ({typeof(a) _a = (a), _b = (b); _a > _b ? _a : _b; })
+#define min(a,b) ({typeof(a) _a = (a), _b = (b); _a < _b ? _a : _b; })
 
 // It's in unistd.h, but for some reason it is not always included
 #ifndef TEMP_FAILURE_RETRY
@@ -126,4 +128,10 @@ static inline unsigned long explicit_hex_conv(const char *p)
     if (*endptr != '\0')
         errx(1, "Wrong parameter (%s). Must be 0xAb... (invalid characters start at: %s)", p, endptr);
     return ret;
+}
+
+static inline bool overlap(unsigned a1, unsigned a2, unsigned b1, unsigned b2)
+{
+    assert(a1 <= a2); assert(b1 <= b2);
+    return max(a1,b1) <= min(a2,b2);
 }

@@ -31,8 +31,16 @@ static inline void print_self_maps()
 
 int main(int argc, char *argv[])
 {
-    if (argc != 1 && argc != 2)
-        errx(10, "Usage: %s [new_code_vaddr=0x06660000]", argv[0]);
+    if (!(argc == 1 || argc == 2 || (argc == 3 && strcmp(argv[1], "nofilecheck") == 0)))
+        errx(10, "Usage: %s [nofilecheck] [new_code_vaddr=0x06660000]", argv[0]);
+
+    bool nofilecheck = false;
+    if (argc >= 2 && strcmp(argv[1], "nofilecheck") == 0) {
+        nofilecheck = true;
+        argv[1] = argv[2];
+        argc--;
+    }
+
 
     unsigned long new_code_ul = 0x06660000u;
     static_assert(sizeof(unsigned long) == sizeof(void*), ""); /* Unclean, but good and simple */
@@ -51,26 +59,14 @@ int main(int argc, char *argv[])
 
     printf("First four bites of new code (%p):\n", new_code);
     do_write(1, new_code, 4);
+    printf("\n");
 
-
-    printf("\nChecking it matches './test_new_code'...\n");
-
-    size_t new_code_size;
-    uint8_t *from_file = read_file("./test_new_code", &new_code_size);
-
-    /*
-    printf("i: actual from_file\n");
-    printf("-------------------\n");
-    for (int64_t i = 0; i < new_code_size; i++) {
-        uint8_t b = new_code[i];
-        printf("%1$"PRIi64": %2$02"PRIx8" %3$02"PRIx8"   %2$c %3$c", i, b, from_file[i]);
-        if (b != from_file[i])
-            printf("    differs");
-        printf("\n");
+    if (!nofilecheck) {
+        printf("Checking it matches './test_new_code'...\n");
+        size_t new_code_size;
+        uint8_t *from_file = read_file("./test_new_code", &new_code_size);
+        V(memcmp(new_code, from_file, new_code_size) == 0);
     }
-    */
-
-    V(memcmp(new_code, from_file, new_code_size) == 0);
 
 
     printf("Jumping there...\n");

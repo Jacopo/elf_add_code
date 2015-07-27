@@ -54,6 +54,66 @@ static void check_elf_file_header(const Ehdr *file_header)
 }
 
 
+static void single_load_from_elf(uint8_t **p_new_code, size_t *p_new_code_size, unsigned long *p_new_code_vaddr)
+{
+    uint8_t *file_start = *p_new_code;
+    Ehdr *file_header = (Ehdr *) file_start;
+    check_elf_file_header(file_header);
+    V(file_header->e_type == ET_EXEC); // TODO: PIE
+
+    uint8_t *new_code = malloc(100); // So that we can realloc()
+    size_t size = 0;
+    unsigned long base = 0;
+
+    Phdr *phdr = (Phdr*) (file_start + file_header->e_phoff);
+    for (int i = 0; i < file_header->e_phnum; i++, phdr++) {
+        if (phdr->p_type == PT_NOTE)
+            continue; /* No need to warn */
+        if (phdr->p_type != PT_LOAD) {
+            fprintf(stderr, "WARNING: Ignoring non-load program header %d/%d, type %d\n",
+                    i+1, file_header->e_phnum, phdr->p_type);
+            continue;
+        }
+
+        V(phdr->p_vaddr == phdr->p_paddr);
+        V(phdr->p_vaddr > (base + size));
+        size_t misalignment = phdr->p_vaddr % 4096;
+        V((phdr->p_offset % 4096) == misalignment);
+
+        if (base == 0) {
+            base = phdr->p_vaddr;
+            V(misalignment == 0); // TODO: not sure how to behave in that case
+        } else {
+            size_t diff = phdr->p_vaddr - (base + size);
+            fprintf(stderr, " Zero-padding from 0x%lx to 0x%lx\n",
+                    (unsigned long) base + size, (unsigned long) phdr->p_vaddr);
+            new_code = realloc(new_code, size + diff); VE(new_code != NULL);
+            memset(new_code + size, 0, diff);
+            size += diff;
+        }
+
+        fprintf(stderr, "Load from 0x%lx to 0x%lx (from file 0x%lx to 0x%lx)\n",
+                base + size, base + size + phdr->p_memsz,
+                (unsigned long) phdr->p_offset, (unsigned long) phdr->p_offset + phdr->p_filesz);
+        new_code = realloc(new_code, size + phdr->p_memsz); VE(new_code != NULL);
+        memcpy(new_code + size, file_start + phdr->p_offset, phdr->p_filesz);
+        size_t extra_load_size = phdr->p_memsz - phdr->p_filesz;
+        if (extra_load_size)
+            memset(new_code + size + phdr->p_filesz, 0, extra_load_size);
+        size += phdr->p_memsz;
+    }
+
+    fprintf(stderr, "New stuff will be loaded from 0x%lx to 0x%lx\n",
+            base, base+size);
+    fprintf(stderr, "Note: the entry point for the ELF we added was 0x%lx\n", (unsigned long) file_header->e_entry);
+
+    *p_new_code = new_code;
+    *p_new_code_size = size;
+    *p_new_code_vaddr = base;
+    free((void*) file_header);
+}
+
+
 int main(int argc, char *argv[])
 {
     if (argc != 3 && argc != 4)
@@ -68,6 +128,10 @@ int main(int argc, char *argv[])
     uint8_t *elf = read_file(argv[1], &original_size);
     uint8_t *new_code = read_file(argv[2], &new_code_size);
 
+    /* Can also add an elf file, if requested, attempting a segment merge. */
+    if (*((uint32_t*) new_code) == 0x464C457f) // \x7fELF
+        single_load_from_elf(&new_code, &new_code_size, &new_code_vaddr);
+
     /* General checks */
     Ehdr *file_header = (Ehdr *) elf;
     check_elf_file_header(file_header);
@@ -76,9 +140,10 @@ int main(int argc, char *argv[])
     Phdr *phdr = (Phdr*) (elf + file_header->e_phoff);
 
     /* Let's find the (first) NOTE */
+    Phdr* note_phdr = 0;
     for (int i = 0; i < file_header->e_phnum; i++, phdr++) {
         if (phdr->p_type == PT_NOTE)
-            break;
+            note_phdr = phdr;
         if (phdr->p_type == PT_PHDR) {
             /* This guy specifies the program headers themselves */
             /* I'm not sure why it exists, but let's do some consistency checks */
@@ -88,13 +153,16 @@ int main(int argc, char *argv[])
             V(phdr->p_filesz == (sizeof(Phdr) * file_header->e_phnum));
             V(phdr->p_filesz == phdr->p_memsz);
         }
+        if (phdr->p_type == PT_LOAD)
+            V(overlap(phdr->p_vaddr, phdr->p_vaddr+phdr->p_memsz, new_code_vaddr, new_code_vaddr+new_code_size) == false);
     }
+    phdr = note_phdr;
     if (phdr->p_type != PT_NOTE)
         errx(1, "There was no NOTE program header!");
 
 
     phdr->p_type = PT_LOAD;
-    phdr->p_flags = (PF_R | PF_X);
+    phdr->p_flags = (PF_R | PF_W | PF_X);
     phdr->p_vaddr = phdr->p_paddr = new_code_vaddr;
     phdr->p_filesz = phdr->p_memsz = new_code_size;
     phdr->p_align = 1; /* Not sure if it matters or not */
