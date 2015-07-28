@@ -49,6 +49,7 @@ int main(int argc, char *argv[])
     uint8_t* new_code = (uint8_t*) new_code_ul;
 
 
+/*
 #define P(x) do { extern uint8_t x; printf(#x "\t= %p\n", &x); } while (0)
     P(__executable_start);
     P(_etext);
@@ -57,9 +58,10 @@ int main(int argc, char *argv[])
     print_self_maps();
 
 
-    printf("First four bites of new code (%p):\n", new_code);
-    do_write(1, new_code, 4);
+    printf("First four bites of new code's entry point (%p):\n", new_code);
+    printf("%02x %02x %02x %02x", (unsigned) new_code[0], (unsigned) new_code[1], (unsigned) new_code[2], (unsigned) new_code[3]);
     printf("\n");
+*/
 
     if (!nofilecheck) {
         printf("Checking it matches './test_new_code'...\n");
@@ -69,11 +71,11 @@ int main(int argc, char *argv[])
     }
 
 
-    printf("Jumping there...\n");
+    printf("Jumping there...\n"); fflush(NULL);
 
     typedef int (*pfunc)();
     unsigned int ret = ((pfunc) new_code)();
-    printf("new code returned 0x%x\n", ret);
+    printf("new code returned 0x%x\n", ret); fflush(NULL);
     V(ret == 0x41414141u);
     return 0;
 }

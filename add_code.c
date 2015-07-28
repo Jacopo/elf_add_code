@@ -3,6 +3,7 @@
 #include <assert.h>
 #include <err.h>
 #include <inttypes.h>
+#include <libgen.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -54,7 +55,7 @@ static void check_elf_file_header(const Ehdr *file_header)
 }
 
 
-static void single_load_from_elf(uint8_t **p_new_code, size_t *p_new_code_size, unsigned long *p_new_code_vaddr)
+static void exec_to_bin(uint8_t **p_new_code, size_t *p_new_code_size, unsigned long *p_new_code_vaddr)
 {
     uint8_t *file_start = *p_new_code;
     Ehdr *file_header = (Ehdr *) file_start;
@@ -113,6 +114,30 @@ static void single_load_from_elf(uint8_t **p_new_code, size_t *p_new_code_size, 
     free((void*) file_header);
 }
 
+static char* link_obj(const char *objname, unsigned long original_entrypoint, unsigned long requested_vaddr)
+{
+    unsigned long vtext = requested_vaddr;
+    unsigned long vdata = vtext + 0x200000; // TODO: get these from the object file
+    unsigned long vbss =  vdata + 0x200000;
+    char exec_filename[255] = "/tmp/add_elf_code_XXXXXX";
+    V(mkdtemp(exec_filename) != NULL);
+    strcat(exec_filename, "/exec_to_add");
+
+    char ld_cmdline[255];
+    const char *m_opt = "";
+#if defined(ADD_CODE_32) && (defined(__i386__) || defined(__x86_64__))
+    m_opt = "-m elf_i386";
+#endif
+    fprintf(stderr, "Symbol original_entrypoint=0x%lx should be available to the new code.\n", original_entrypoint);
+    snprintf(ld_cmdline, sizeof(ld_cmdline),
+            "ld -nostdlib -Ttext=0x%lx -Tdata=0x%lx -Tbss=0x%lx --gc-sections %s "
+            "--defsym=original_entrypoint=0x%lx --fatal-warnings -o \"%s\" \"%s\" 1>&2",
+            vtext, vdata, vbss, m_opt, original_entrypoint, exec_filename, objname);
+    fprintf(stderr, "Running: %s\n", ld_cmdline);
+    V(system(ld_cmdline) == 0);
+
+    return strdup(exec_filename);
+}
 
 int main(int argc, char *argv[])
 {
@@ -129,8 +154,20 @@ int main(int argc, char *argv[])
     uint8_t *new_code = read_file(argv[2], &new_code_size);
 
     /* Can also add an elf file, if requested, attempting a segment merge. */
-    if (*((uint32_t*) new_code) == 0x464C457f) // \x7fELF
-        single_load_from_elf(&new_code, &new_code_size, &new_code_vaddr);
+    if (*((uint32_t*) new_code) == 0x464C457f) { // \x7fELF
+        if (((Ehdr*) new_code)->e_type == ET_EXEC) {
+            exec_to_bin(&new_code, &new_code_size, &new_code_vaddr);
+        } else if (((Ehdr*) new_code)->e_type == ET_REL) {
+            char *execname = link_obj(argv[2], ((const Ehdr*) elf)->e_entry, new_code_vaddr);
+            free(new_code);
+            new_code = read_file(execname, &new_code_size);
+            char *tmpdir = dirname(execname);
+            char rm_cmdline[255];
+            snprintf(rm_cmdline, sizeof(rm_cmdline), "rm -rf \"%s\"", tmpdir);
+            system(rm_cmdline);
+            exec_to_bin(&new_code, &new_code_size, &new_code_vaddr);
+        } else errx(1, "Can't handle PIE (or whatever that was)");
+    }
 
     /* General checks */
     Ehdr *file_header = (Ehdr *) elf;

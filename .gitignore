@@ -1,3 +1,5 @@
+*.o
+*.stderr
 /add_code_32
 /add_code_64
 /test
