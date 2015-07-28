@@ -76,8 +76,13 @@ static void exec_to_bin(uint8_t **p_new_code, size_t *p_new_code_size, unsigned 
             continue;
         }
 
+        if (phdr->p_vaddr == 0)
+            errx(1, "ERROR: your code is asking to be loaded starting from address 0. MOST LIKELY, THE BINARY WOULD NOT LOAD, due to vm.mmap_min_addr. Note that ld aligns segments, so your load address should be higher than the alignment mask used by ld. (Also, my code does not handle it :()\n");
+        else if (phdr->p_vaddr <= (base + size))
+            errx(1, "ERROR: The PT_LOAD headers are out of order: PT_LOAD header %d/%d has a smaller vaddr than last one's end (0x%lx <= 0x%lx).",
+                    i+1, file_header->e_phnum, (unsigned long) phdr->p_vaddr, base + size);
+
         V(phdr->p_vaddr == phdr->p_paddr);
-        V(phdr->p_vaddr > (base + size));
         size_t misalignment = phdr->p_vaddr % 4096;
         V((phdr->p_offset % 4096) == misalignment);
 
@@ -177,7 +182,7 @@ int main(int argc, char *argv[])
     Phdr *phdr = (Phdr*) (elf + file_header->e_phoff);
 
     /* Let's find the (first) NOTE */
-    Phdr* note_phdr = 0;
+    Phdr* note_phdr = NULL;
     for (int i = 0; i < file_header->e_phnum; i++, phdr++) {
         if (phdr->p_type == PT_NOTE)
             note_phdr = phdr;
@@ -190,8 +195,15 @@ int main(int argc, char *argv[])
             V(phdr->p_filesz == (sizeof(Phdr) * file_header->e_phnum));
             V(phdr->p_filesz == phdr->p_memsz);
         }
-        if (phdr->p_type == PT_LOAD)
+        if (phdr->p_type == PT_LOAD) {
             V(overlap(phdr->p_vaddr, phdr->p_vaddr+phdr->p_memsz, new_code_vaddr, new_code_vaddr+new_code_size) == false);
+
+            /* PT_LOAD headers should be ordered by vaddr */
+            if ((note_phdr == NULL) && (phdr->p_vaddr > new_code_vaddr)) /* PT_LOAD before ours, but larger vaddr */
+                fprintf(stderr, "WARNING: PT_LOAD header %d/%d comes before the NOTE one, but has a larger vaddr than your code's (0x%lx > 0x%lx). With PT_LOAD headers out of order THE NEW FILE MAY NOT LOAD.\n", i+1, file_header->e_phnum, (unsigned long) phdr->p_vaddr, new_code_vaddr);
+            if ((note_phdr != NULL) && (phdr->p_vaddr < new_code_vaddr)) /* PT_LOAD after ours, but smaller vaddr */
+                fprintf(stderr, "WARNING: PT_LOAD header %d/%d comes after the NOTE one, but has a smaller vaddr than your code's (0x%lx < 0x%lx). With PT_LOAD headers out of order THE NEW FILE MAY NOT LOAD.\n", i+1, file_header->e_phnum, (unsigned long) phdr->p_vaddr, new_code_vaddr);
+        }
     }
     phdr = note_phdr;
     if (phdr->p_type != PT_NOTE)
