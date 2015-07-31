@@ -55,7 +55,7 @@ static void check_elf_file_header(const Ehdr *file_header)
 }
 
 
-static void exec_to_bin(uint8_t **p_new_code, size_t *p_new_code_size, unsigned long *p_new_code_vaddr)
+static unsigned long exec_to_bin(uint8_t **p_new_code, size_t *p_new_code_size, unsigned long *p_new_code_vaddr)
 {
     uint8_t *file_start = *p_new_code;
     Ehdr *file_header = (Ehdr *) file_start;
@@ -109,17 +109,19 @@ static void exec_to_bin(uint8_t **p_new_code, size_t *p_new_code_size, unsigned 
         size += phdr->p_memsz;
     }
 
+    unsigned long added_code_entry = (unsigned long) file_header->e_entry;
     fprintf(stderr, "New stuff will be loaded from 0x%lx to 0x%lx\n",
             base, base+size);
-    fprintf(stderr, "Note: the entry point for the ELF we added was 0x%lx\n", (unsigned long) file_header->e_entry);
+    fprintf(stderr, "Note: the entry point for the ELF we added was 0x%lx\n", added_code_entry);
 
     *p_new_code = new_code;
     *p_new_code_size = size;
     *p_new_code_vaddr = base;
     free((void*) file_header);
+    return added_code_entry;
 }
 
-static char* link_obj(const char *objname, unsigned long original_entrypoint, unsigned long requested_vaddr)
+static char* link_obj(const char *objname, unsigned long original_entrypoint, unsigned long requested_vaddr, bool before_entry)
 {
     unsigned long vtext = requested_vaddr;
     unsigned long vdata = vtext + 0x200000; // TODO: get these from the object file
@@ -128,16 +130,27 @@ static char* link_obj(const char *objname, unsigned long original_entrypoint, un
     V(mkdtemp(exec_filename) != NULL);
     strcat(exec_filename, "/exec_to_add");
 
-    char ld_cmdline[255];
+    const char *helperquotedname = "";
+    if (before_entry) {
+#if defined(ADD_CODE_32)
+        helperquotedname = "\"entry_helper_32.o\"";
+#elif defined(ADD_CODE_64)
+        helperquotedname = "\"entry_helper_64.o\"";
+#endif
+    }
+
+    char ld_cmdline[500];
     const char *m_opt = "";
 #if defined(ADD_CODE_32) && (defined(__i386__) || defined(__x86_64__))
     m_opt = "-m elf_i386";
 #endif
     fprintf(stderr, "Symbol original_entrypoint=0x%lx should be available to the new code.\n", original_entrypoint);
-    snprintf(ld_cmdline, sizeof(ld_cmdline),
+    int cmdlen = snprintf(ld_cmdline, sizeof(ld_cmdline),
             "ld -nostdlib -Ttext=0x%lx -Tdata=0x%lx -Tbss=0x%lx --gc-sections %s "
-            "--defsym=original_entrypoint=0x%lx --fatal-warnings -o \"%s\" \"%s\" 1>&2",
-            vtext, vdata, vbss, m_opt, original_entrypoint, exec_filename, objname);
+            "--defsym=original_entrypoint=0x%lx --fatal-warnings -o \"%s\" "
+            "--start-group \"%s\" %s --end-group 1>&2",
+            vtext, vdata, vbss, m_opt, original_entrypoint, exec_filename, objname, helperquotedname);
+    VS(cmdlen); V(cmdlen < ((int) sizeof(ld_cmdline)));
     fprintf(stderr, "Running: %s\n", ld_cmdline);
     V(system(ld_cmdline) == 0);
 
@@ -146,31 +159,45 @@ static char* link_obj(const char *objname, unsigned long original_entrypoint, un
 
 int main(int argc, char *argv[])
 {
-    if (argc != 3 && argc != 4)
-        errx(10, "Usage: %s program new_code [new_code_vaddr=0x06660000] > out_program", argv[0]);
+    if (argc != 3 && argc != 4 && argc != 5)
+        errx(10, "Usage: %s [--before-entry] program new_code [new_code_vaddr=0x06660000] > out_program", argv[0]);
+
+    int argbase = 0; // XXX: yeah, yeah
+
+    bool before_entry = false;
+    if (strcmp(argv[1], "--before-entry") == 0) {
+        before_entry = true;
+        argbase++;
+    }
 
     unsigned long new_code_vaddr = 0x06660000u;
     static_assert(sizeof(unsigned long) == sizeof(void*), ""); /* Unclean, but good and simple */
-    if (argc == 4)
-        new_code_vaddr = explicit_hex_conv(argv[3]);
+    if (argc == (4+argbase))
+        new_code_vaddr = explicit_hex_conv(argv[3+argbase]);
 
     size_t original_size, new_code_size;
-    uint8_t *elf = read_file(argv[1], &original_size);
-    uint8_t *new_code = read_file(argv[2], &new_code_size);
+    uint8_t *elf = read_file(argv[1+argbase], &original_size);
+    uint8_t *new_code = read_file(argv[2+argbase], &new_code_size);
 
-    /* Can also add an elf file, if requested, attempting a segment merge. */
+    if (before_entry && ((Ehdr*) new_code)->e_type != ET_REL)
+        errx(1, "You need to pass an object file to take advantage of the entry point replacement helper.");
+
+    /* Can also add an elf file, if requested, attempting a segment merge.
+     * If using an object file, it will link it, also making original_entrypoint available to it as a symbol. */
+    unsigned long new_code_entry = 0;
     if (*((uint32_t*) new_code) == 0x464C457f) { // \x7fELF
         if (((Ehdr*) new_code)->e_type == ET_EXEC) {
             exec_to_bin(&new_code, &new_code_size, &new_code_vaddr);
         } else if (((Ehdr*) new_code)->e_type == ET_REL) {
-            char *execname = link_obj(argv[2], ((const Ehdr*) elf)->e_entry, new_code_vaddr);
+            char *execname = link_obj(argv[2+argbase], ((const Ehdr*) elf)->e_entry, new_code_vaddr, before_entry);
             free(new_code);
             new_code = read_file(execname, &new_code_size);
             char *tmpdir = dirname(execname);
-            char rm_cmdline[255];
-            snprintf(rm_cmdline, sizeof(rm_cmdline), "rm -rf \"%s\"", tmpdir);
+            char rm_cmdline[500];
+            int cmdlen = snprintf(rm_cmdline, sizeof(rm_cmdline), "rm -rf \"%s\"", tmpdir);
+            VS(cmdlen); V(cmdlen < ((int) sizeof(rm_cmdline)));
             system(rm_cmdline);
-            exec_to_bin(&new_code, &new_code_size, &new_code_vaddr);
+            new_code_entry = exec_to_bin(&new_code, &new_code_size, &new_code_vaddr);
         } else errx(1, "Can't handle PIE (or whatever that was)");
     }
 
@@ -215,6 +242,10 @@ int main(int argc, char *argv[])
     phdr->p_vaddr = phdr->p_paddr = new_code_vaddr;
     phdr->p_filesz = phdr->p_memsz = new_code_size;
     phdr->p_align = 1; /* Not sure if it matters or not */
+
+    /* If requested, change the entry point */
+    if (before_entry)
+        file_header->e_entry = new_code_entry;
 
     /* Pads to make sure that the code is loaded right at new_code_vaddr */
     V(sysconf(_SC_PAGESIZE) == 4096u);
