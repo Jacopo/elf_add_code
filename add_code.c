@@ -31,6 +31,8 @@ static_assert(sizeof(void*) == 8, "I mangle 64-bit ELFs only as a 64-bit program
 #error "Do you want to mangle 32-bit or 64-bit ELF files?"
 #endif
 
+#define info(args...) fprintf(stderr, "[INFO] " args)
+#define warning(args...) fprintf(stderr, "\n*WARNING*: " args)
 
 static void check_elf_file_header(const Ehdr *file_header)
 {
@@ -70,8 +72,12 @@ static unsigned long exec_to_bin(uint8_t **p_new_code, size_t *p_new_code_size, 
     for (int i = 0; i < file_header->e_phnum; i++, phdr++) {
         if (phdr->p_type == PT_NOTE)
             continue; /* No need to warn */
+        if (phdr->p_type == PT_GNU_STACK) {
+            info("Ignoring the PT_GNU_STACK program header, your code will inherit the original program's one\n");
+            continue;
+        }
         if (phdr->p_type != PT_LOAD) {
-            fprintf(stderr, "WARNING: Ignoring non-load program header %d/%d, type %d\n",
+            warning("Ignoring non-load program header %d/%d, type 0x%x\n",
                     i+1, file_header->e_phnum, phdr->p_type);
             continue;
         }
@@ -91,14 +97,14 @@ static unsigned long exec_to_bin(uint8_t **p_new_code, size_t *p_new_code_size, 
             V(misalignment == 0); // TODO: not sure how to behave in that case
         } else {
             size_t diff = phdr->p_vaddr - (base + size);
-            fprintf(stderr, " Zero-padding from 0x%lx to 0x%lx\n",
+            info("0x%lx -> 0x%lx Zero-padding\n",
                     (unsigned long) base + size, (unsigned long) phdr->p_vaddr);
             new_code = realloc(new_code, size + diff); VE(new_code != NULL);
             memset(new_code + size, 0, diff);
             size += diff;
         }
 
-        fprintf(stderr, "Load from 0x%lx to 0x%lx (from file 0x%lx to 0x%lx)\n",
+        info("0x%lx -> 0x%lx Load from file 0x%lx to 0x%lx\n",
                 base + size, base + size + phdr->p_memsz,
                 (unsigned long) phdr->p_offset, (unsigned long) phdr->p_offset + phdr->p_filesz);
         new_code = realloc(new_code, size + phdr->p_memsz); VE(new_code != NULL);
@@ -110,9 +116,9 @@ static unsigned long exec_to_bin(uint8_t **p_new_code, size_t *p_new_code_size, 
     }
 
     unsigned long added_code_entry = (unsigned long) file_header->e_entry;
-    fprintf(stderr, "New stuff will be loaded from 0x%lx to 0x%lx\n",
+    info("New stuff will be loaded from 0x%lx to 0x%lx\n",
             base, base+size);
-    fprintf(stderr, "Note: the entry point for the ELF we added was 0x%lx\n", added_code_entry);
+    info("The entry point for the ELF we added was 0x%lx\n", added_code_entry);
 
     *p_new_code = new_code;
     *p_new_code_size = size;
@@ -144,14 +150,14 @@ static char* link_obj(const char *objname, unsigned long original_entrypoint, un
 #if defined(ADD_CODE_32) && (defined(__i386__) || defined(__x86_64__))
     m_opt = "-m elf_i386";
 #endif
-    fprintf(stderr, "Symbol original_entrypoint=0x%lx should be available to the new code.\n", original_entrypoint);
+    info("Symbol original_entrypoint=0x%lx should be available to the new code.\n", original_entrypoint);
     int cmdlen = snprintf(ld_cmdline, sizeof(ld_cmdline),
             "ld -nostdlib -Ttext=0x%lx -Tdata=0x%lx -Tbss=0x%lx --gc-sections %s "
             "--defsym=original_entrypoint=0x%lx --fatal-warnings -o \"%s\" "
             "--start-group \"%s\" %s --end-group 1>&2",
             vtext, vdata, vbss, m_opt, original_entrypoint, exec_filename, objname, helperquotedname);
     VS(cmdlen); V(cmdlen < ((int) sizeof(ld_cmdline)));
-    fprintf(stderr, "Running: %s\n", ld_cmdline);
+    info("Running: %s\n", ld_cmdline);
     V(system(ld_cmdline) == 0);
 
     return strdup(exec_filename);
@@ -227,9 +233,9 @@ int main(int argc, char *argv[])
 
             /* PT_LOAD headers should be ordered by vaddr */
             if ((note_phdr == NULL) && (phdr->p_vaddr > new_code_vaddr)) /* PT_LOAD before ours, but larger vaddr */
-                fprintf(stderr, "WARNING: PT_LOAD header %d/%d comes before the NOTE one, but has a larger vaddr than your code's (0x%lx > 0x%lx). With PT_LOAD headers out of order THE NEW FILE MAY NOT LOAD.\n", i+1, file_header->e_phnum, (unsigned long) phdr->p_vaddr, new_code_vaddr);
+                warning("PT_LOAD header %d/%d comes before the NOTE one, but has a larger vaddr than your code's (0x%lx > 0x%lx). With PT_LOAD headers out of order THE NEW FILE MAY NOT LOAD.\n", i+1, file_header->e_phnum, (unsigned long) phdr->p_vaddr, new_code_vaddr);
             if ((note_phdr != NULL) && (phdr->p_vaddr < new_code_vaddr)) /* PT_LOAD after ours, but smaller vaddr */
-                fprintf(stderr, "WARNING: PT_LOAD header %d/%d comes after the NOTE one, but has a smaller vaddr than your code's (0x%lx < 0x%lx). With PT_LOAD headers out of order THE NEW FILE MAY NOT LOAD.\n", i+1, file_header->e_phnum, (unsigned long) phdr->p_vaddr, new_code_vaddr);
+                warning("PT_LOAD header %d/%d comes after the NOTE one, but has a smaller vaddr than your code's (0x%lx < 0x%lx). With PT_LOAD headers out of order THE NEW FILE MAY NOT LOAD.\n", i+1, file_header->e_phnum, (unsigned long) phdr->p_vaddr, new_code_vaddr);
         }
     }
     phdr = note_phdr;
