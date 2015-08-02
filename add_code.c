@@ -166,7 +166,7 @@ static char* link_obj(const char *objname, unsigned long original_entrypoint, un
 int main(int argc, char *argv[])
 {
     if (argc != 3 && argc != 4 && argc != 5)
-        errx(10, "Usage: %s [--before-entry] program new_code [new_code_vaddr=0x06660000] > out_program", argv[0]);
+        errx(10, "Usage: %s [--before-entry] program new_code [new_code_vaddr=0x16660000] > out_program", argv[0]);
 
     int argbase = 0; // XXX: yeah, yeah
 
@@ -176,7 +176,7 @@ int main(int argc, char *argv[])
         argbase++;
     }
 
-    unsigned long new_code_vaddr = 0x06660000u;
+    unsigned long new_code_vaddr = 0x16660000u;
     static_assert(sizeof(unsigned long) == sizeof(void*), ""); /* Unclean, but good and simple */
     if (argc == (4+argbase))
         new_code_vaddr = explicit_hex_conv(argv[3+argbase]);

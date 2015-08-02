@@ -71,12 +71,12 @@ entry_test_32.o: entry_test_32.nasm
 check: all
 	./test.sh ./add_code_64 test test_new_code
 	./test.sh ./add_code_64 test_static test_new_code
-	./test.sh ./add_code_64 test test_new_code 0x03330000
-	./test.sh ./add_code_64 test_static test_new_code 0x03330000
+	./test.sh ./add_code_64 test test_new_code 0x13330000
+	./test.sh ./add_code_64 test_static test_new_code 0x13330000
 	./test.sh ./add_code_32 test_32 test_new_code
 	./test.sh ./add_code_32 test_static_32 test_new_code
-	./test.sh ./add_code_32 test_32 test_new_code 0x03330000
-	./test.sh ./add_code_32 test_static_32 test_new_code 0x03330000
+	./test.sh ./add_code_32 test_32 test_new_code 0x13330000
+	./test.sh ./add_code_32 test_static_32 test_new_code 0x13330000
 	@echo "Basic tests passed, let's try injecting full ELF executables..."
 	./test.sh ./add_code_64 test test_multisection_64
 	./test.sh ./add_code_64 test_static test_multisection_64
@@ -85,21 +85,22 @@ check: all
 	@echo "ELF executable tests passed, let's try linking in ELF objects..."
 	./test.sh ./add_code_64 test test_multisection_origentry_64.o
 	./test.sh ./add_code_64 test_static test_multisection_origentry_64.o
-	./test.sh ./add_code_64 test test_multisection_origentry_64.o 0x03330000
-	./test.sh ./add_code_64 test_static test_multisection_origentry_64.o 0x03330000
+	./test.sh ./add_code_64 test test_multisection_origentry_64.o 0x13330000
+	./test.sh ./add_code_64 test_static test_multisection_origentry_64.o 0x13330000
 	./test.sh ./add_code_32 test_32 test_multisection_origentry_32.o
 	./test.sh ./add_code_32 test_static_32 test_multisection_origentry_32.o
-	./test.sh ./add_code_32 test_32 test_multisection_origentry_32.o 0x03330000
-	./test.sh ./add_code_32 test_static_32 test_multisection_origentry_32.o 0x03330000
+	./test.sh ./add_code_32 test_32 test_multisection_origentry_32.o 0x13330000
+	./test.sh ./add_code_32 test_static_32 test_multisection_origentry_32.o 0x13330000
 	@echo "Non-entry code injection tests passed, let's now test entry-point replacement helpers..."
-	#./test-entry.sh ./add_code_64 --before-entry test_dumb entry_test_64.o
 	./test-entry.sh ./add_code_64 --before-entry test_dumb_static entry_test_64.o
-	#./test-entry.sh ./add_code_64 --before-entry test_dumb entry_test_64.o 0x03330000
-	./test-entry.sh ./add_code_64 --before-entry test_dumb_static entry_test_64.o 0x03330000
-	#./test-entry.sh ./add_code_32 --before-entry test_dumb_32 entry_test_32.o
+	./test-entry.sh ./add_code_64 --before-entry test_dumb_static entry_test_64.o 0x13330000
 	./test-entry.sh ./add_code_32 --before-entry test_dumb_static_32 entry_test_32.o
-	#./test-entry.sh ./add_code_32 --before-entry test_dumb_32 entry_test_32.o 0x03330000
-	./test-entry.sh ./add_code_32 --before-entry test_dumb_static_32 entry_test_32.o 0x03330000
+	./test-entry.sh ./add_code_32 --before-entry test_dumb_static_32 entry_test_32.o 0x13330000
+	@echo "before-entry doesn't work on dynamic executables, not testing it"
+	#./test-entry.sh ./add_code_64 --before-entry test_dumb entry_test_64.o
+	#./test-entry.sh ./add_code_64 --before-entry test_dumb entry_test_64.o 0x13330000
+	#./test-entry.sh ./add_code_32 --before-entry test_dumb_32 entry_test_32.o
+	#./test-entry.sh ./add_code_32 --before-entry test_dumb_32 entry_test_32.o 0x13330000
 	@echo "All tests passed :)"
 
 .PHONY: clean all check

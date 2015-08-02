@@ -7,7 +7,7 @@ Adding raw assembly code
 ------------------------
 
     nasm -fbin -o new_code_bin new_code.nasm
-    add_code_xx original_program new_code_bin [new_code_vaddr=0x06660000] > modified_program
+    add_code_xx original_program new_code_bin [new_code_vaddr=0x16660000] > modified_program
 
 
 Adding a full ELF executable
@@ -15,7 +15,7 @@ Adding a full ELF executable
 
 (Don't use this mode directly, it's mainly a helper for the next one.)
 
-    gcc -nostdlib -static -Wl,-Ttext=0x066000000 -Wl,-Tdata=0x066200000 -Wl,-Tbss=0x066400000 -Wl,--build-id=none -o exec_to_add something.c
+    gcc -nostdlib -static -Wl,-Ttext=0x166000000 -Wl,-Tdata=0x166200000 -Wl,-Tbss=0x166400000 -Wl,--build-id=none -o exec_to_add something.c
     add_code_xx program exec_to_add > out_program
     
 The program's LOAD commands ("segments") will be merged into a single one. Its load address is determined by what is in `exec_to_add`, so make sure there is no overlap. Check with `readelf -l`.
@@ -26,7 +26,7 @@ Linking in an ELF object / replacing the entry point
 ----------------------------------------------------
 
     gcc -nostdlib -static -Wl,--build-id=none -o xxx.o -c xxx.c
-    add_code_xx [--before-entry] program xxx.o [new_code_vaddr=0x06660000] > out_program
+    add_code_xx [--before-entry] program xxx.o [new_code_vaddr=0x16660000] > out_program
 
 Will take care of linking xxx.o. You will be able to use `extern uintptr_t original_entrypoint` to refer to stuff in the main program.
 

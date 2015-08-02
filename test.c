@@ -32,7 +32,7 @@ static inline void print_self_maps()
 int main(int argc, char *argv[])
 {
     if (!(argc == 1 || argc == 2 || (argc == 3 && strcmp(argv[1], "nofilecheck") == 0)))
-        errx(10, "Usage: %s [nofilecheck] [new_code_vaddr=0x06660000]", argv[0]);
+        errx(10, "Usage: %s [nofilecheck] [new_code_vaddr=0x16660000]", argv[0]);
 
     bool nofilecheck = false;
     if (argc >= 2 && strcmp(argv[1], "nofilecheck") == 0) {
@@ -42,7 +42,7 @@ int main(int argc, char *argv[])
     }
 
 
-    unsigned long new_code_ul = 0x06660000u;
+    unsigned long new_code_ul = 0x16660000u;
     static_assert(sizeof(unsigned long) == sizeof(void*), ""); /* Unclean, but good and simple */
     if (argc == 2)
         new_code_ul = explicit_hex_conv(argv[1]);
