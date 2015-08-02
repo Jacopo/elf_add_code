@@ -135,3 +135,9 @@ static inline bool overlap(unsigned a1, unsigned a2, unsigned b1, unsigned b2)
     assert(a1 <= a2); assert(b1 <= b2);
     return max(a1,b1) <= min(a2,b2);
 }
+
+static inline void safe_strcat(char *dest, const char *src, size_t dest_size)
+{
+    V(dest_size > strlen(src));
+    strcat(dest, src);
+}

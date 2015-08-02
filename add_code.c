@@ -15,17 +15,18 @@
 
 #include <elf.h>
 
-
 #if defined(ADD_CODE_32)
 # define Ehdr Elf32_Ehdr
 # define Phdr Elf32_Phdr
 # define Shdr Elf32_Shdr
 static const int ELFCLASS = ELFCLASS32;
+static const char* ENTRY_HELPER = "entry_helper_32.o";
 #elif defined(ADD_CODE_64)
 # define Ehdr Elf64_Ehdr
 # define Phdr Elf64_Phdr
 # define Shdr Elf64_Shdr
 static const int ELFCLASS = ELFCLASS64;
+static const char* ENTRY_HELPER = "entry_helper_64.o";
 static_assert(sizeof(void*) == 8, "I mangle 64-bit ELFs only as a 64-bit program. This thing is already complicated enough.");
 #else
 #error "Do you want to mangle 32-bit or 64-bit ELF files?"
@@ -127,38 +128,34 @@ static unsigned long exec_to_bin(uint8_t **p_new_code, size_t *p_new_code_size, 
     return added_code_entry;
 }
 
-static char* link_obj(const char *objname, unsigned long original_entrypoint, unsigned long requested_vaddr, bool before_entry)
+//static char* link_obj(const char *objects[], int n_objects, const char *original_program, unsigned long requested_vaddr, bool before_entry)
+static char* link_obj(const char *object, const char *original_program, unsigned long requested_vaddr, bool before_entry)
 {
-    unsigned long vtext = requested_vaddr;
-    unsigned long vdata = vtext + 0x200000; // TODO: get these from the object file
-    unsigned long vbss =  vdata + 0x200000;
     char exec_filename[255] = "/tmp/add_elf_code_XXXXXX";
     V(mkdtemp(exec_filename) != NULL);
     strcat(exec_filename, "/exec_to_add");
 
-    const char *helperquotedname = "";
-    if (before_entry) {
-#if defined(ADD_CODE_32)
-        helperquotedname = "\"entry_helper_32.o\"";
-#elif defined(ADD_CODE_64)
-        helperquotedname = "\"entry_helper_64.o\"";
-#endif
-    }
+    char cmdline[500];
+    int cmdlen = snprintf(cmdline, sizeof(cmdline),
+            "./link_o.py --original-program '%s' -o '%s' --start-address=0x%lx",
+            original_program, exec_filename, requested_vaddr);
+    VS(cmdlen); V(cmdlen < ((int) sizeof(cmdline)));
+//    for (int i; i < n_objects; i++) {
+//        safe_strcat(cmdline, " '", sizeof(cmdline));
+//        safe_strcat(cmdline, objects[i], sizeof(cmdline));
+//        safe_strcat(cmdline, "'", sizeof(cmdline));
+//    }
+    safe_strcat(cmdline, " '", sizeof(cmdline));
+    safe_strcat(cmdline, object, sizeof(cmdline));
+    safe_strcat(cmdline, "'", sizeof(cmdline));
 
-    char ld_cmdline[500];
-    const char *m_opt = "";
-#if defined(ADD_CODE_32) && (defined(__i386__) || defined(__x86_64__))
-    m_opt = "-m elf_i386";
-#endif
-    info("Symbol original_entrypoint=0x%lx should be available to the new code.\n", original_entrypoint);
-    int cmdlen = snprintf(ld_cmdline, sizeof(ld_cmdline),
-            "ld -nostdlib -Ttext=0x%lx -Tdata=0x%lx -Tbss=0x%lx --gc-sections %s "
-            "--defsym=original_entrypoint=0x%lx --fatal-warnings -o \"%s\" "
-            "--start-group \"%s\" %s --end-group 1>&2",
-            vtext, vdata, vbss, m_opt, original_entrypoint, exec_filename, objname, helperquotedname);
-    VS(cmdlen); V(cmdlen < ((int) sizeof(ld_cmdline)));
-    info("Running: %s\n", ld_cmdline);
-    V(system(ld_cmdline) == 0);
+    if (before_entry) {
+        safe_strcat(cmdline, " '", sizeof(cmdline));
+        safe_strcat(cmdline, ENTRY_HELPER, sizeof(cmdline));
+        safe_strcat(cmdline, "'", sizeof(cmdline));
+    }
+    info("Running %s\n", cmdline);
+    V(system(cmdline) == 0);
 
     return strdup(exec_filename);
 }
@@ -181,9 +178,12 @@ int main(int argc, char *argv[])
     if (argc == (4+argbase))
         new_code_vaddr = explicit_hex_conv(argv[3+argbase]);
 
+    char* elf_filename = argv[1+argbase];
+    char* new_code_filename = argv[2+argbase];
+
     size_t original_size, new_code_size;
-    uint8_t *elf = read_file(argv[1+argbase], &original_size);
-    uint8_t *new_code = read_file(argv[2+argbase], &new_code_size);
+    uint8_t *elf = read_file(elf_filename, &original_size);
+    uint8_t *new_code = read_file(new_code_filename, &new_code_size);
 
     if (before_entry && ((Ehdr*) new_code)->e_type != ET_REL)
         errx(1, "You need to pass an object file to take advantage of the entry point replacement helper.");
@@ -195,7 +195,7 @@ int main(int argc, char *argv[])
         if (((Ehdr*) new_code)->e_type == ET_EXEC) {
             exec_to_bin(&new_code, &new_code_size, &new_code_vaddr);
         } else if (((Ehdr*) new_code)->e_type == ET_REL) {
-            char *execname = link_obj(argv[2+argbase], ((const Ehdr*) elf)->e_entry, new_code_vaddr, before_entry);
+            char* execname = link_obj(new_code_filename, elf_filename, new_code_vaddr, before_entry);
             free(new_code);
             new_code = read_file(execname, &new_code_size);
             char *tmpdir = dirname(execname);
