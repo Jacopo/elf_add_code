@@ -15,6 +15,7 @@ done
 origentry=`readelf --file-header "$2" | grep Entry | grep -o -E '0x[[:alnum:]]+'`
 
 "$@" > ./modified_test 2>./add_code.stderr || { cat ./add_code.stderr; exit 1; }
+grep -q WARNING ./add_code.stderr && { echo "ERROR: got a warning, probably wrong test parameters"; exit 1; }
 if [[ $nofilecheck != "" ]]; then
     addr=`grep 'entry point for the ELF we added' ./add_code.stderr | grep -o -E '0x[[:alnum:]]+'`
 fi
