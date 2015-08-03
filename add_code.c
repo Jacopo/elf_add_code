@@ -1,6 +1,7 @@
-/* Finds the first NOTE program header and turns it into another LOAD header for code. Check what you are discarding with readelf --notes. */
-
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <assert.h>
+#include <dirent.h>
 #include <err.h>
 #include <inttypes.h>
 #include <libgen.h>
@@ -8,12 +9,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <unistd.h>
 #include "utils.h"
 
 #include <elf.h>
+
+/* Used to find the helper scripts and objects.
+ * If NULL, will be set to the program's own directory. */
+char* MY_PATH = NULL;
 
 #if defined(ADD_CODE_32)
 # define Ehdr Elf32_Ehdr
@@ -137,8 +140,8 @@ static char* link_obj(const char *object, const char *original_program, unsigned
 
     char cmdline[500];
     int cmdlen = snprintf(cmdline, sizeof(cmdline),
-            "./link_o.py --original-program '%s' -o '%s' --start-address=0x%lx",
-            original_program, exec_filename, requested_vaddr);
+            "'%s/link_o.py' --original-program '%s' -o '%s' --start-address=0x%lx",
+            MY_PATH, original_program, exec_filename, requested_vaddr);
     VS(cmdlen); V(cmdlen < ((int) sizeof(cmdline)));
 //    for (int i; i < n_objects; i++) {
 //        safe_strcat(cmdline, " '", sizeof(cmdline));
@@ -151,6 +154,8 @@ static char* link_obj(const char *object, const char *original_program, unsigned
 
     if (before_entry) {
         safe_strcat(cmdline, " '", sizeof(cmdline));
+        safe_strcat(cmdline, MY_PATH, sizeof(cmdline));
+        safe_strcat(cmdline, "/", sizeof(cmdline));
         safe_strcat(cmdline, ENTRY_HELPER, sizeof(cmdline));
         safe_strcat(cmdline, "'", sizeof(cmdline));
     }
@@ -164,6 +169,14 @@ int main(int argc, char *argv[])
 {
     if (argc != 3 && argc != 4 && argc != 5)
         errx(10, "Usage: %s [--before-entry] program new_code [new_code_vaddr=0x16660000] > out_program", argv[0]);
+
+    if (MY_PATH == NULL) {
+        MY_PATH = dirname(strdup(argv[0]));
+        DIR *d = opendir(MY_PATH);
+        if (d == NULL)
+            err(1, "I couldn't determine the path of my helper files. I tried '%s' from argv[0]='%s'.", MY_PATH, argv[0]);
+        closedir(d);
+    }
 
     int argbase = 0; // XXX: yeah, yeah
 
