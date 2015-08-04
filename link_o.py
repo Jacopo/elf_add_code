@@ -90,7 +90,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--original-program", required=True, help="Get the symbols from this guy")
     parser.add_argument("-o", "--out", required=True, help="Output file name")
-    parser.add_argument("--start-address", default=0x16660000, help="Your sections will be loaded starting at that address (format: 0xaddr)")
+    parser.add_argument("--start-address", default="0x16660000", help="Your sections will be loaded starting at that address (format: 0xaddr)")
     parser.add_argument("objects", nargs="+")
     args = parser.parse_args()
 
